@@ -124,12 +124,8 @@ async def saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Gagal mengambil data saldo dari database.")
 
 def main():
-    # Masukkan HTTP API Token dari BotFather di sini
+    # Token API Telegram yang telah Anda berikan
     TOKEN = "8841482158:AAGwDZp4UhX7qQltllmHJMtyBXTH_KTZPeo"
-
-    if TOKEN == "8841482158:AAGwDZp4UhX7qQltllmHJMtyBXTH_KTZPeo":
-        print("PERINGATAN: Harap ganti TOKEN dengan token BotFather yang asli!")
-        return
 
     # Inisialisasi Application Bot Telegram
     application = ApplicationBuilder().token(TOKEN).build()
