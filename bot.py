@@ -1,6 +1,7 @@
 import os
 import datetime
 import logging
+import uuid  # <--- Tambahkan import ini
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from supabase import create_client, Client
@@ -55,7 +56,9 @@ async def tambah_transaksi(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         current_date = datetime.date.today().isoformat()
 
         # Data yang akan dimasukkan ke Supabase
+               # Data yang akan dimasukkan ke Supabase (Tambahkan 'id' unik di sini)
         data_to_insert = {
+            "id": f"bot_{uuid.uuid4().hex[:10]}",  # <--- ID Unik untuk mencegah error null constraint
             "type": db_type,
             "amount": amount,
             "category": "Lainnya" if db_type == 'expense' else "Pemasukan",
@@ -63,6 +66,7 @@ async def tambah_transaksi(update: Update, context: ContextTypes.DEFAULT_TYPE, t
             "note": note,
             "date": current_date
         }
+
 
         # Kirim data ke tabel 'transactions' di Supabase
         response = supabase.table("transactions").insert(data_to_insert).execute()
