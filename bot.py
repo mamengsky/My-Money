@@ -2,7 +2,7 @@ import os
 import datetime
 import logging
 import uuid
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -29,7 +29,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # State untuk ConversationHandler
 NOMINAL, KETERANGAN = range(2)
 
-# Opsi Kategori / Keterangan dari Gambar & Tambahan Gaji/Income
+# Opsi Kategori / Keterangan
 EXPENSE_OPTIONS = [
     "Biaya Listrik",
     "Biaya Internet",
@@ -49,23 +49,50 @@ INCOME_OPTIONS = [
     "Lainnya"
 ]
 
+def get_main_menu_keyboard():
+    """Membuat Menu Tombol Utama yang selalu muncul di bawah obrolan."""
+    keyboard = [
+        [KeyboardButton("🟢 Masuk"), KeyboardButton("🔴 Keluar")],
+        [KeyboardButton("📊 Saldo")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Menyapa pengguna dan memberikan panduan perintah bot."""
+    """Menyapa pengguna dan menampilkan menu utama berupa tombol."""
     welcome_message = (
         "Halo! Selamat datang di Bot MY WALLET 💰\n\n"
         "Semua data yang kamu catat di sini akan langsung tersinkronisasi dengan website.\n\n"
-        "**Perintah yang tersedia:**\n"
-        "• `/masuk` - Mencatat pemasukan secara bertahap\n"
-        "• `/keluar` - Mencatat pengeluaran secara bertahap\n"
-        "• `/saldo` - Mengecek total pemasukan, pengeluaran, dan saldo saat ini\n"
-        "• `/batal` - Membatalkan proses pencatatan\n"
+        "Silakan pilih menu di bawah ini untuk memulai:"
     )
-    await update.message.reply_text(welcome_message, parse_mode='Markdown')
+    await update.message.reply_text(
+        welcome_message,
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode='Markdown'
+    )
+
+async def handle_unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Merespons jika pengguna mengirim pesan apapun tanpa menggunakan command."""
+    text = update.message.text
+    
+    # Jika pesan pengguna adalah klik tombol dari keyboard utama
+    if "Saldo" in text:
+        await saldo(update, context)
+    else:
+        await update.message.reply_text(
+            "Silakan pilih tindakan dari tombol di bawah ini ⬇️",
+            reply_markup=get_main_menu_keyboard()
+        )
 
 async def mulai_transaksi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Langkah 1: Memulai alur dengan menentukan tipe (masuk/keluar)."""
-    command = update.message.text.split()[0].replace("/", "")
-    context.user_data['type'] = command  # simpan 'masuk' atau 'keluar'
+    """Langkah 1: Memulai alur dengan menentukan tipe dari command/tombol."""
+    text = update.message.text
+    
+    if "Masuk" in text or "masuk" in text:
+        command = "masuk"
+    else:
+        command = "keluar"
+        
+    context.user_data['type'] = command
     
     tipe_text = "pemasukan 🟢" if command == "masuk" else "pengeluaran 🔴"
     await update.message.reply_text(
@@ -75,7 +102,7 @@ async def mulai_transaksi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return NOMINAL
 
 async def terima_nominal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Langkah 2: Menerima input nominal angka, lalu menampilkan tombol opsi keterangan."""
+    """Langkah 2: Menerima nominal dan menampilkan tombol opsi keterangan."""
     text = update.message.text.strip().replace(".", "").replace(",", "")
     
     try:
@@ -87,7 +114,7 @@ async def terima_nominal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['amount'] = amount
         tipe = context.user_data['type']
         
-        # Buat daftar tombol (Inline Keyboard)
+        # Buat daftar tombol opsi pilihan (Inline Keyboard)
         options = INCOME_OPTIONS if tipe == "masuk" else EXPENSE_OPTIONS
         keyboard = []
         
@@ -110,7 +137,7 @@ async def terima_nominal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return NOMINAL
 
 async def terima_keterangan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Langkah 3: Menerima pilihar tombol keterangan, lalu menyimpan data ke Supabase."""
+    """Langkah 3: Menerima pilihan tombol keterangan dan menyimpan ke Supabase."""
     query = update.callback_query
     await query.answer()
     
@@ -121,7 +148,6 @@ async def terima_keterangan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db_type = 'income' if tipe == 'masuk' else 'expense'
     current_date = datetime.date.today().isoformat()
 
-    # Data yang disiapkan untuk Supabase
     data_to_insert = {
         "id": f"bot_{uuid.uuid4().hex[:10]}",
         "type": db_type,
@@ -158,17 +184,23 @@ async def terima_keterangan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def batal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Membatalkan proses pencatatan kapan saja."""
     context.user_data.clear()
-    await update.message.reply_text("Prositur pencatatan dibatalkan.")
+    await update.message.reply_text(
+        "Prosedur pencatatan dibatalkan.",
+        reply_markup=get_main_menu_keyboard()
+    )
     return ConversationHandler.END
 
 async def saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Menghitung dan menampilkan total pemasukan, pengeluaran, dan saldo bersih."""
+    """Menghitung dan menampilkan saldo saat ini."""
     try:
         response = supabase.table("transactions").select("*").execute()
         data = response.data
 
         if not data:
-            await update.message.reply_text("Belum ada transaksi tercatat di database.")
+            await update.message.reply_text(
+                "Belum ada transaksi tercatat di database.",
+                reply_markup=get_main_menu_keyboard()
+            )
             return
 
         total_income = sum(item['amount'] for item in data if item.get('type') == 'income')
@@ -182,34 +214,48 @@ async def saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"──────────────────\n"
             f"💰 **Saldo Bersih:** Rp {net_balance:,.0f}".replace(",", ".")
         )
-        await update.message.reply_text(msg, parse_mode='Markdown')
+        await update.message.reply_text(
+            msg,
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode='Markdown'
+        )
 
     except Exception as e:
         logger.error(f"Error mengambil saldo: {e}")
-        await update.message.reply_text("Gagal mengambil data saldo dari database.")
+        await update.message.reply_text(
+            "Gagal mengambil data saldo dari database.",
+            reply_markup=get_main_menu_keyboard()
+        )
 
 def main():
     TOKEN = "8841482158:AAGwDZp4UhX7qQltllmHJMtyBXTH_KTZPeo"
 
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Conversation Handler untuk alur bertahap /masuk dan /keluar
+    # Conversation Handler untuk pencatatan transaksi bertahap
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("masuk", mulai_transaksi),
-            CommandHandler("keluar", mulai_transaksi)
+            CommandHandler("keluar", mulai_transaksi),
+            MessageHandler(filters.Regex("^(🟢 Masuk|🔴 Keluar)$"), mulai_transaksi)
         ],
         states={
             NOMINAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_nominal)],
             KETERANGAN: [CallbackQueryHandler(terima_keterangan)]
         },
-        fallbacks=[CommandHandler("batal", batal)]
+        fallbacks=[
+            CommandHandler("batal", batal),
+            MessageHandler(filters.Regex("^/batal$"), batal)
+        ]
     )
 
     # Register Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("saldo", saldo))
     application.add_handler(conv_handler)
+    
+    # Handler pesan umum jika pengguna mengetik tanpa command/start
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_text))
 
     print("Bot sedang berjalan... Tekan Ctrl+C untuk berhenti.")
     application.run_polling()
