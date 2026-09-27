@@ -248,9 +248,12 @@
                         <h3 id="reportTotalIncome" class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Rp0</h3>
                     </div>
 
-                    <!-- Savings -->
+                    <!-- Savings (Akumulatif Goals Belum Tercapai) -->
                     <div class="bg-rose-100/70 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 p-5 rounded-2xl flex flex-col justify-between">
-                        <span class="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-2">Savings</span>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Savings (Goals Aktif)</span>
+                            <i class="fa-solid fa-infinity text-xs text-slate-400" title="Akumulatif target belum tercapai"></i>
+                        </div>
                         <h3 id="reportSavings" class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Rp0</h3>
                     </div>
 
@@ -951,12 +954,13 @@
             });
             const overallBalance = overallIncome - overallSpendings;
 
-            // Total Savings dari Goals yang SEDANG BERJALAN dan BELUM TUNTAS (current < target)
+            // Calculate ALL-TIME Continuous Savings (Akumulatif seluruh target tabungan yang BELUM TUNTAS / current < target)
             const ongoingGoals = state.goals.filter(g => (Number(g.current) || 0) < (Number(g.target) || 0));
             const ongoingSavings = ongoingGoals.reduce((acc, g) => acc + (Number(g.current) || 0), 0);
 
             // Render Monthly Metric Cards
             document.getElementById('reportTotalIncome').innerText = formatRupiah(totalIncome);
+            // Savings menampilkan Akumulatif Tabungan dari Goals Aktif yang Belum Tuntas (Kontinu)
             document.getElementById('reportSavings').innerText = formatRupiah(ongoingSavings);
             document.getElementById('reportTotalSpendings').innerText = formatRupiah(totalSpendings);
             // Balance menampilkan Sisa Uang Keseluruhan (Kumulatif/Kontinuitas)
