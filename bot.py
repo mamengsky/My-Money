@@ -27,9 +27,9 @@ SUPABASE_KEY = "sb_publishable_7zCLrX-DciJNflkgPUj6jQ_xb9G_mtf"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # State untuk ConversationHandler
-NOMINAL, KETERANGAN = range(2)
+NOMINAL, ACCOUNT, KETERANGAN = range(3)
 
-# Opsi Kategori / Keterangan
+# Opsi Kategori / Keterangan dari Gambar & Pemasukan
 EXPENSE_OPTIONS = [
     "Biaya Listrik",
     "Biaya Internet",
@@ -74,7 +74,6 @@ async def handle_unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Merespons jika pengguna mengirim pesan apapun tanpa menggunakan command."""
     text = update.message.text
     
-    # Jika pesan pengguna adalah klik tombol dari keyboard utama
     if "Saldo" in text:
         await saldo(update, context)
     else:
@@ -84,7 +83,7 @@ async def handle_unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 async def mulai_transaksi(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Langkah 1: Memulai alur dengan menentukan tipe dari command/tombol."""
+    """Langkah 1: Memulai alur dengan menentukan tipe (masuk/keluar)."""
     text = update.message.text
     
     if "Masuk" in text or "masuk" in text:
@@ -102,7 +101,7 @@ async def mulai_transaksi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return NOMINAL
 
 async def terima_nominal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Langkah 2: Menerima nominal dan menampilkan tombol opsi keterangan."""
+    """Langkah 2: Menerima nominal dan menampilkan pilihan Akun (Bank / Cash)."""
     text = update.message.text.strip().replace(".", "").replace(",", "")
     
     try:
@@ -112,38 +111,66 @@ async def terima_nominal(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return NOMINAL
             
         context.user_data['amount'] = amount
-        tipe = context.user_data['type']
         
-        # Buat daftar tombol opsi pilihan (Inline Keyboard)
-        options = INCOME_OPTIONS if tipe == "masuk" else EXPENSE_OPTIONS
-        keyboard = []
-        
-        for item in options:
-            keyboard.append([InlineKeyboardButton(item, callback_data=item)])
-            
+        # Tombol Pilihan Akun
+        keyboard = [
+            [
+                InlineKeyboardButton("🏦 Bank", callback_data="acc_bank"),
+                InlineKeyboardButton("💵 Cash", callback_data="acc_cash")
+            ]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         formatted_amount = f"Rp {amount:,.0f}".replace(",", ".")
         await update.message.reply_text(
             f"Nominal dicatat: **{formatted_amount}**\n\n"
-            f"Pilih **keterangan/kategori** {tipe} di bawah ini:",
+            f"Pilih **sumber / tujuan akun** transaksi:",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
-        return KETERANGAN
+        return ACCOUNT
 
     except ValueError:
         await update.message.reply_text("Nominal harus berupa angka saja! Silakan ketik ulang nominalnya:")
         return NOMINAL
 
+async def terima_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Langkah 3: Menerima akun (Bank/Cash) lalu menampilkan pilihan Keterangan."""
+    query = update.callback_query
+    await query.answer()
+    
+    account_selected = "bank" if query.data == "acc_bank" else "cash"
+    context.user_data['account'] = account_selected
+    
+    tipe = context.user_data.get('type')
+    
+    # Buat tombol pilihan keterangan
+    options = INCOME_OPTIONS if tipe == "masuk" else EXPENSE_OPTIONS
+    keyboard = []
+    
+    for item in options:
+        keyboard.append([InlineKeyboardButton(item, callback_data=item)])
+        
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    account_label = "🏦 Bank" if account_selected == "bank" else "💵 Cash"
+    await query.edit_message_text(
+        f"Akun dipilih: **{account_label}**\n\n"
+        f"Pilih **keterangan/kategori** {tipe} di bawah ini:",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+    return KETERANGAN
+
 async def terima_keterangan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Langkah 3: Menerima pilihan tombol keterangan dan menyimpan ke Supabase."""
+    """Langkah 4: Menerima keterangan dan menyimpan seluruh data ke Supabase."""
     query = update.callback_query
     await query.answer()
     
     note = query.data
     tipe = context.user_data.get('type')
     amount = context.user_data.get('amount')
+    account = context.user_data.get('account')
     
     db_type = 'income' if tipe == 'masuk' else 'expense'
     current_date = datetime.date.today().isoformat()
@@ -153,7 +180,7 @@ async def terima_keterangan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "type": db_type,
         "amount": amount,
         "category": note if db_type == 'expense' else "Pemasukan",
-        "account": "cash",
+        "account": account,
         "note": note,
         "date": current_date
     }
@@ -164,11 +191,13 @@ async def terima_keterangan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response.data:
             emoji = "🟢" if db_type == 'income' else "🔴"
             formatted_amount = f"Rp {amount:,.0f}".replace(",", ".")
+            account_label = "🏦 Bank" if account == "bank" else "💵 Cash"
             
             await query.edit_message_text(
                 f"✅ **Berhasil dicatat!** {emoji}\n\n"
                 f"**Jenis:** {db_type.upper()}\n"
                 f"**Jumlah:** {formatted_amount}\n"
+                f"**Akun:** {account_label}\n"
                 f"**Keterangan:** {note}\n"
                 f"**Tanggal:** {current_date}",
                 parse_mode='Markdown'
@@ -191,7 +220,7 @@ async def batal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Menghitung dan menampilkan saldo saat ini."""
+    """Menghitung dan menampilkan saldo total, rincian per akun, serta saldo bersih (savings)."""
     try:
         response = supabase.table("transactions").select("*").execute()
         data = response.data
@@ -205,14 +234,27 @@ async def saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         total_income = sum(item['amount'] for item in data if item.get('type') == 'income')
         total_expense = sum(item['amount'] for item in data if item.get('type') == 'expense')
-        net_balance = total_income - total_expense
+        
+        # Perhitungan Saldo per Akun
+        bank_income = sum(item['amount'] for item in data if item.get('type') == 'income' and item.get('account') == 'bank')
+        bank_expense = sum(item['amount'] for item in data if item.get('type') == 'expense' and item.get('account') == 'bank')
+        bank_balance = bank_income - bank_expense
+
+        cash_income = sum(item['amount'] for item in data if item.get('type') == 'income' and item.get('account') == 'cash')
+        cash_expense = sum(item['amount'] for item in data if item.get('type') == 'expense' and item.get('account') == 'cash')
+        cash_balance = cash_income - cash_expense
+
+        savings = total_income - total_expense
 
         msg = (
             f"📊 **Ringkasan Keuangan MY WALLET**\n\n"
             f"🟢 **Total Pemasukan:** Rp {total_income:,.0f}\n".replace(",", ".") +
             f"🔴 **Total Pengeluaran:** Rp {total_expense:,.0f}\n".replace(",", ".") +
-            f"──────────────────\n"
-            f"💰 **Saldo Bersih:** Rp {net_balance:,.0f}".replace(",", ".")
+            f"──────────────\n"
+            f"🏦 **Saldo Bank:** Rp {bank_balance:,.0f}\n".replace(",", ".") +
+            f"💵 **Saldo Cash:** Rp {cash_balance:,.0f}\n".replace(",", ".") +
+            f"──────────────\n"
+            f"💰 **Total Savings (Saldo Bersih):** Rp {savings:,.0f}".replace(",", ".")
         )
         await update.message.reply_text(
             msg,
@@ -232,7 +274,7 @@ def main():
 
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Conversation Handler untuk pencatatan transaksi bertahap
+    # Conversation Handler untuk transaksi bertahap
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("masuk", mulai_transaksi),
@@ -241,6 +283,7 @@ def main():
         ],
         states={
             NOMINAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, terima_nominal)],
+            ACCOUNT: [CallbackQueryHandler(terima_account, pattern="^acc_")],
             KETERANGAN: [CallbackQueryHandler(terima_keterangan)]
         },
         fallbacks=[
@@ -254,7 +297,7 @@ def main():
     application.add_handler(CommandHandler("saldo", saldo))
     application.add_handler(conv_handler)
     
-    # Handler pesan umum jika pengguna mengetik tanpa command/start
+    # Handler pesan umum
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_text))
 
     print("Bot sedang berjalan... Tekan Ctrl+C untuk berhenti.")
