@@ -220,7 +220,7 @@ async def batal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Menghitung dan menampilkan saldo total, rincian per akun, serta saldo bersih (savings)."""
+    """Menghitung dan menampilkan total pemasukan, pengeluaran, dan saldo bersih (versi asli)."""
     try:
         response = supabase.table("transactions").select("*").execute()
         data = response.data
@@ -234,27 +234,14 @@ async def saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         total_income = sum(item['amount'] for item in data if item.get('type') == 'income')
         total_expense = sum(item['amount'] for item in data if item.get('type') == 'expense')
-        
-        # Perhitungan Saldo per Akun
-        bank_income = sum(item['amount'] for item in data if item.get('type') == 'income' and item.get('account') == 'bank')
-        bank_expense = sum(item['amount'] for item in data if item.get('type') == 'expense' and item.get('account') == 'bank')
-        bank_balance = bank_income - bank_expense
-
-        cash_income = sum(item['amount'] for item in data if item.get('type') == 'income' and item.get('account') == 'cash')
-        cash_expense = sum(item['amount'] for item in data if item.get('type') == 'expense' and item.get('account') == 'cash')
-        cash_balance = cash_income - cash_expense
-
-        savings = total_income - total_expense
+        net_balance = total_income - total_expense
 
         msg = (
             f"📊 **Ringkasan Keuangan MY WALLET**\n\n"
             f"🟢 **Total Pemasukan:** Rp {total_income:,.0f}\n".replace(",", ".") +
             f"🔴 **Total Pengeluaran:** Rp {total_expense:,.0f}\n".replace(",", ".") +
-            f"──────────────\n"
-            f"🏦 **Saldo Bank:** Rp {bank_balance:,.0f}\n".replace(",", ".") +
-            f"💵 **Saldo Cash:** Rp {cash_balance:,.0f}\n".replace(",", ".") +
-            f"──────────────\n"
-            f"💰 **Total Savings (Saldo Bersih):** Rp {savings:,.0f}".replace(",", ".")
+            f"──────────────────\n"
+            f"💰 **Saldo Bersih:** Rp {net_balance:,.0f}".replace(",", ".")
         )
         await update.message.reply_text(
             msg,
